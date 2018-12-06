@@ -223,42 +223,188 @@ specscraper <- function(plane_name){
 
 plane_specs <- plane_name %>% specscraper()
 
-master_specs <- tibble()
+# master_specs <- tibble()
+# 
+# tried_list <- c()
 
-tried_list <- c()
 
-
-
-df2 <- df %>% filter(!name %in% tried_list)
-
-for(i in c(1:length(df2))){
+for(j in c(1:2)){
   
-  plane_name <- df2[i,] %>% 
-    pull(name)
+  set.seed(j)
+  print(paste0("loop number ", j))
   
-  plane_key <- plane_name %>% str_replace_all(" ", "_")
+  df2 <- df %>% filter(!name %in% tried_list)
+  remainder <- df2 %>% nrow()
   
-  plane_url <- paste0("https://en.wikipedia.org/wiki/", plane_key)
+  print(paste0("loop number ", j, " remaining: ", remainder))
   
-  tried_list <- c(tried_list, plane_name)
+  df3 <- df2 %>% sample_n(10)
   
-  print(paste0("Scraping ", plane_name))
-  
-  plane_specs <- tibble()
-  
-  if(url.exists(plane_url)){
-    plane_specs <- plane_name %>% specscraper()
+  for(i in c(1:length(df3))){
+    
+    plane_name <- df3[i,] %>% 
+      pull(name)
+    
+    plane_key <- plane_name %>% str_replace_all(" ", "_")
+    
+    plane_url <- paste0("https://en.wikipedia.org/wiki/", plane_key)
+    
+    tried_list <- c(tried_list, plane_name)
+    
+    print(paste0("Scraping ", plane_name))
+    
+    plane_specs <- tibble()
+    
+    if(url.exists(plane_url)){
+      plane_specs <- plane_name %>% specscraper()
+      
+    }
+    
+    
+    if(url.exists(plane_url)){
+      
+      print(paste0("Found ", (plane_specs %>% nrow()), " attributes"))
+      
+      master_specs <- master_specs %>% 
+        bind_rows(plane_specs)
+    }
     
   }
   
-  
-  if(url.exists(plane_url)){
-    
-    print(paste0("Found ", (plane_specs %>% nrow()), " attributes"))
-    
-    master_specs <- master_specs %>% 
-      bind_rows(plane_specs)
-  }
   
 }
 
+
+master_specs %>% write_csv("intdata/master_specs.csv")
+
+wide_m <- master_specs %>% 
+  mutate(unit = str_replace_all(unit, "²", "2")) %>% 
+  unite(key, key, unit, sep = " ") %>% 
+  spread(key = "key", value = "value") 
+
+master_specs$unit %>% unique()
+
+units <- master_specs %>% 
+  mutate(unit = str_replace_all(unit, "²", "2")) %>% 
+  group_by(key, unit) %>% 
+  summarise(count = n()) %>% 
+  arrange(desc(count))
+
+attribs <- master_specs %>% 
+  group_by(key) %>% 
+  summarise(count = n()) %>% 
+  arrange(desc(count))
+
+worker_specs <- master_specs
+
+worker_specs <- worker_specs %>% 
+  mutate(unit = str_replace_all(unit, "²", "2")) %>% 
+  mutate(conversion = case_when(unit == "ft" ~ .3048,
+                                 unit == "lb" ~ .453592,
+                                 unit == "hp" ~ 0.7457,
+                                 unit == "mph" ~ 1.60934,
+                                unit == "mi" ~ 1.60934,
+                                 unit == "ftmin" ~ 0.00508,
+                                 unit == "miles" ~ 1.60934,
+                                unit == "ft2" ~ .092903,
+                                unit == "knot" ~ 1.852,
+                                unit == "kn" ~ 1.852,
+                                unit == "nm" ~ 1.852,
+                                unit == "nmi" ~ 1.852,
+                                unit == "in" ~ 25.4),
+         newval = case_when(is.na(conversion) == F ~ value*conversion,
+                            is.na(conversion) == T ~ value*1),
+         unit = case_when(unit == "ft" ~ "m",
+                          unit == "lb" ~ "kg",
+                          unit == "hp" ~ "kW",
+                          unit == "mph" ~ "kmh",
+                          unit == "mi" ~ "km",
+                          unit == "ftmin" ~ "ms",
+                          unit == "miles" ~  "km",
+                          unit == "ft2" ~ "m2",
+                          unit == "knot" ~ "kmh",
+                          unit == "kn" ~ "kmh",
+                          unit == "nm" ~ "km",
+                          unit == "nmi" ~ "km",
+                          unit == "in" ~ "mm",
+                          TRUE~unit))
+
+units <- worker_specs %>% 
+  mutate(unit = str_replace_all(unit, "²", "2")) %>% 
+  group_by(key, unit) %>% 
+  summarise(count = n()) %>% 
+  arrange(desc(count))
+
+attribs <- worker_specs %>% 
+  group_by(key) %>% 
+  summarise(count = n()) %>% 
+  arrange(desc(count))
+
+topattribs <- attribs %>% 
+  head(n = 20) %>% 
+  pull(key)
+
+goodunits <- c("m", "kg", "kW", "kmh", "ms", "m2", "mm")
+
+                              
+wide_w <- worker_specs %>% 
+  filter(key %in% topattribs) %>% 
+  filter(unit %in% goodunits) %>% 
+  mutate(value = case_when(is.na(conversion) == T ~ newval,
+                           is.na(conversion) == F ~ value)) %>% 
+  select(-newval, - conversion) %>% 
+  unite(key, key, unit, sep = " ") %>% 
+  spread(key = "key", value = "value")  
+
+wide_w %>% skim()
+
+wide_w <- wide_w %>% 
+  left_join(df, by = "name") 
+
+wide_w %>% skim()
+
+plot <- wide_w %>% 
+  ggplot(aes(x = `Empty weight kg`, y = `Maximum speed kmh`, size = number, col = year, text = name))+
+  geom_point()+
+  scale_colour_gradientn(colours = rainbow(10))
+ggplotly(plot)
+
+plot <- wide_w %>% 
+  ggplot(aes(x = `Empty weight kg`, y = `Maximum speed kmh`, size = number, col = year, text = name))+
+  geom_point()+
+  scale_colour_gradientn(colours = rainbow(10))+
+  facet_grid(.~status)+
+  ggtitle(label = "plane speed vs weight")
+ggplotly(plot)
+
+plot <- wide_w %>% 
+  ggplot(aes(x = `Powerplant kW`, y = `Empty weight kg`, size = number, col = `Maximum speed kmh`, text = name))+
+  geom_point()+
+  scale_colour_gradientn(colours = rainbow(10))+
+  ggtitle(label = "plane power and speed")
+ggplotly(plot)
+
+p <- ggplotly(plot)
+
+Sys.setenv("plotly_username"="aidan.morrison")
+Sys.setenv("plotly_api_key"="HJ0c94ZBCvQcIbYOB58W")
+
+chart_link = api_create(p, filename = "jets")
+chart_link
+
+colnames(wide_w) <- colnames(wide_w) %>% str_replace_all(" ", "_")
+
+mod <- wide_w %>% 
+  select(-name, -country) %>% 
+  rpart(formula = Maximum_speed_kmh~.)
+mod %>% rpart.plot()
+mod %>% plotcp()
+summary(mod)
+
+mod <- wide_w %>% 
+  select(-name, -country) %>% 
+  rpart(formula = Maximum_speed_kmh~., cp = 0.005)
+mod %>% rpart.plot()
+mod %>% plotcp()
+summary(mod)
+  
