@@ -6,6 +6,7 @@ library(plotly)
 library(rpart)
 library(rpart.plot)
 library(RCurl)
+library(ggrepel)
 
 url <- "https://en.wikipedia.org/wiki/List_of_fighter_aircraft"
 
@@ -329,16 +330,16 @@ worker_specs <- worker_specs %>%
                           unit == "in" ~ "mm",
                           TRUE~unit))
 
-units <- worker_specs %>% 
+(units <- worker_specs %>% 
   mutate(unit = str_replace_all(unit, "²", "2")) %>% 
   group_by(key, unit) %>% 
   summarise(count = n()) %>% 
-  arrange(desc(count))
+  arrange(desc(count)))
 
-attribs <- worker_specs %>% 
+(attribs <- worker_specs %>% 
   group_by(key) %>% 
   summarise(count = n()) %>% 
-  arrange(desc(count))
+  arrange(desc(count)))
 
 topattribs <- attribs %>% 
   head(n = 20) %>% 
@@ -346,7 +347,10 @@ topattribs <- attribs %>%
 
 goodunits <- c("m", "kg", "kW", "kmh", "ms", "m2", "mm")
 
-                              
+worker_specs <- worker_specs %>% 
+  unique()
+
+## Here is the error!
 wide_w <- worker_specs %>% 
   filter(key %in% topattribs) %>% 
   filter(unit %in% goodunits) %>% 
@@ -354,7 +358,26 @@ wide_w <- worker_specs %>%
                            is.na(conversion) == F ~ value)) %>% 
   select(-newval, - conversion) %>% 
   unite(key, key, unit, sep = " ") %>% 
-  spread(key = "key", value = "value")  
+  spread(key = "key", value = "value") 
+
+## Fixed
+
+wide_w. <- worker_specs %>% 
+  filter(key %in% topattribs) %>% 
+  filter(unit %in% goodunits) %>% 
+  mutate(value = case_when(is.na(conversion) == F ~ newval,
+                           is.na(conversion) == T ~ value)) %>% 
+  select(-newval, - conversion) %>% 
+  unite(key, key, unit, sep = " ")
+
+wide_w <- wide_w. %>% 
+  unite(dupchecker, name, key, remove = F) %>% 
+  filter(duplicated(dupchecker) == F) %>% 
+  select(-dupchecker) %>% 
+  unique() %>% 
+  spread(key = "key", value = "value")
+
+
 
 wide_w %>% skim()
 
@@ -363,33 +386,33 @@ wide_w <- wide_w %>%
 
 wide_w %>% skim()
 
-plot <- wide_w %>% 
+(plot <- wide_w %>% 
   ggplot(aes(x = `Empty weight kg`, y = `Maximum speed kmh`, size = number, col = year, text = name))+
   geom_point()+
-  scale_colour_gradientn(colours = rainbow(10))
+  scale_colour_gradientn(colours = rainbow(10)))
 ggplotly(plot)
 
-plot <- wide_w %>% 
+(plot <- wide_w %>% 
   ggplot(aes(x = `Empty weight kg`, y = `Maximum speed kmh`, size = number, col = year, text = name))+
   geom_point()+
   scale_colour_gradientn(colours = rainbow(10))+
   facet_grid(.~status)+
-  ggtitle(label = "plane speed vs weight")
+  ggtitle(label = "plane speed vs weight"))
 ggplotly(plot)
 
-plot <- wide_w %>% 
+(plot <- wide_w %>% 
   ggplot(aes(x = `Powerplant kW`, y = `Empty weight kg`, size = number, col = `Maximum speed kmh`, text = name))+
   geom_point()+
   scale_colour_gradientn(colours = rainbow(10))+
-  ggtitle(label = "plane power and speed")
+  ggtitle(label = "plane power and speed"))
 ggplotly(plot)
 
 p <- ggplotly(plot)
 
 Sys.setenv("plotly_username"="aidan.morrison")
-Sys.setenv("plotly_api_key"="HJ0c94ZBCvQcIbYOB58W")
 
-chart_link = api_create(p, filename = "jets")
+
+chart_link = api_create(p, filename = "jets2")
 chart_link
 
 colnames(wide_w) <- colnames(wide_w) %>% str_replace_all(" ", "_")
@@ -403,8 +426,65 @@ summary(mod)
 
 mod <- wide_w %>% 
   select(-name, -country) %>% 
-  rpart(formula = Maximum_speed_kmh~., cp = 0.005)
+  rpart(formula = Maximum_speed_kmh~., cp = 0.0005)
 mod %>% rpart.plot()
 mod %>% plotcp()
 summary(mod)
+
+wide_w %>% 
+  write_csv("intdata/ftplanes.csv")
+
+### some more vis
+
+wide_w$Guns_mm %>% unique()
+
+wide_w %>% skim()
+
+topcountries <- df %>% 
+  group_by(country) %>% 
+  summarise(count = n()) %>% 
+  arrange(desc(count)) %>% 
+  head(7) %>% 
+  pull(country)
+
+
+(plot <-wide_w %>% 
+  filter(Guns_mm %>% is.na() == F) %>% 
+  filter(country %in% topcountries) %>% 
+  mutate(Guns_mm = (Guns_mm %>% round())) %>% 
+  filter(Guns_mm %in% c(8,13,20,30)) %>% 
+  ggplot(aes(x = year, y = Service_ceiling_m, col = country))+
+  geom_point()+
+  facet_grid(Guns_mm~.)+
+  ggtitle(label = "Fighter service ceiling grouped by gun calibre"))
+
+topcountries <- master_specs %>% 
+  left_join(df, by = "name") %>% 
+  group_by(country) %>% 
+  summarise(count = n()) %>% 
+  arrange(desc(count)) %>% 
+  head(12) %>% 
+  pull(country)
+
+topplanes <- wide_w %>% 
+  arrange(desc(number)) %>% 
+  head(n = 20) %>% 
+  pull(name)
+
+wide_w %>% 
+  filter(country %in% topcountries) %>% 
+  skim()
+
+(plot <- wide_w %>%
+  #filter(country %in% topcountries) %>%
+  filter(name %in% topplanes) %>% 
+  ggplot(aes(x = Empty_weight_kg, y = Powerplant_kW, col = country, size = number, label = name))+
+  geom_point()+
+  ggrepel::geom_label_repel()+
+  ggtitle(label = "Power vs Weight"))
+  
+
+wide_w %>% 
+  
+  
   
