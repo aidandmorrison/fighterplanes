@@ -1,12 +1,25 @@
-library(tidyverse)
-library(rvest)
-library(skimr)
-library(lubridate)
-library(plotly)
-library(rpart)
-library(rpart.plot)
-library(RCurl)
-library(ggrepel)
+# library(tidyverse)
+# library(rvest)
+# library(skimr)
+# library(lubridate)
+# library(plotly)
+# library(rpart)
+# library(rpart.plot)
+# library(RCurl)
+# library(ggrepel)
+
+#install.packages("pacman")
+library(pacman)
+p_load(tidyverse)
+p_load(rvest)
+p_load(skimr)
+p_load(lubridate)
+p_load(plotly)
+p_load(rpart)
+p_load(rpart.plot)
+p_load(RCurl)
+p_load(ggrepel)
+
 
 url <- "https://en.wikipedia.org/wiki/List_of_fighter_aircraft"
 
@@ -40,7 +53,7 @@ fighter_html %>%
 table <- fighter_html %>% 
   html_table(fill = T)
 
-df <- table[[1]]
+(df <- table[[1]])
 
 skim(df)
 
@@ -120,7 +133,7 @@ mod <- df %>%
   select(-name) %>% 
   rpart(formula = number~.)
 rpart.plot(mod)
-
+plotcp(mod)
 summary(mod)
 
 #### now testing on F14 for spec scrape ----
@@ -228,13 +241,17 @@ plane_specs <- plane_name %>% specscraper()
 # 
 # tried_list <- c()
 
+tried_list2 <- c()
 
-for(j in c(1:2)){
+demo_filler <- tibble()
+
+
+for(j in c(1:5)){
   
   set.seed(j)
   print(paste0("loop number ", j))
   
-  df2 <- df %>% filter(!name %in% tried_list)
+  df2 <- df %>% filter(!name %in% tried_list2)
   remainder <- df2 %>% nrow()
   
   print(paste0("loop number ", j, " remaining: ", remainder))
@@ -250,7 +267,8 @@ for(j in c(1:2)){
     
     plane_url <- paste0("https://en.wikipedia.org/wiki/", plane_key)
     
-    tried_list <- c(tried_list, plane_name)
+    # tried_list <- c(tried_list, plane_name)
+    tried_list2 <- c(tried_list2, plane_name)
     
     print(paste0("Scraping ", plane_name))
     
@@ -266,7 +284,10 @@ for(j in c(1:2)){
       
       print(paste0("Found ", (plane_specs %>% nrow()), " attributes"))
       
-      master_specs <- master_specs %>% 
+      # master_specs <- master_specs %>%
+      #   bind_rows(plane_specs)
+      
+      demo_filler <- demo_filler %>%
         bind_rows(plane_specs)
     }
     
@@ -276,7 +297,12 @@ for(j in c(1:2)){
 }
 
 
-master_specs %>% write_csv("intdata/master_specs.csv")
+#master_specs %>% write_csv("intdata/master_specs.csv")
+
+
+##### Need to widen 
+
+master_specs <- read_csv("intdata/master_specs.csv")
 
 wide_m <- master_specs %>% 
   mutate(unit = str_replace_all(unit, "²", "2")) %>% 
@@ -341,11 +367,11 @@ worker_specs <- worker_specs %>%
   summarise(count = n()) %>% 
   arrange(desc(count)))
 
-topattribs <- attribs %>% 
+(topattribs <- attribs %>% 
   head(n = 20) %>% 
-  pull(key)
+  pull(key))
 
-goodunits <- c("m", "kg", "kW", "kmh", "ms", "m2", "mm")
+(goodunits <- c("m", "kg", "kW", "kmh", "ms", "m2", "mm"))
 
 worker_specs <- worker_specs %>% 
   unique()
@@ -378,7 +404,7 @@ wide_w <- wide_w. %>%
   spread(key = "key", value = "value")
 
 
-
+#### real data !!
 wide_w %>% skim()
 
 wide_w <- wide_w %>% 
@@ -387,7 +413,7 @@ wide_w <- wide_w %>%
 wide_w %>% skim()
 
 (plot <- wide_w %>% 
-  ggplot(aes(x = `Empty weight kg`, y = `Maximum speed kmh`, size = number, col = year, text = name))+
+  ggplot(aes(x = `Empty weight kg`, y = `Maximum speed kmh`, size = number, col = year, text = name, text2 = country))+
   geom_point()+
   scale_colour_gradientn(colours = rainbow(10)))
 ggplotly(plot)
@@ -482,9 +508,28 @@ wide_w %>%
   geom_point()+
   ggrepel::geom_label_repel()+
   ggtitle(label = "Power vs Weight"))
+
+topplanes <- df %>% 
+  arrange(desc(number)) %>% 
+  head(n = 15) %>% 
+  pull(name)
+
+(plot <-df %>% 
+    ggplot(aes(x = year, y = number , col = status, text = name, text2 = country))+
+    geom_point()+
+    ggtitle(label = "History of Fighters")+
+    geom_label_repel(data = df %>% filter(name %in% topplanes), aes(x = year, y = number, label = name)))
+ggplotly(plot)
+
+(plot <- wide_w %>% 
+    ggplot(aes(x = `Empty_weight_kg`, y = `Maximum_speed_kmh`, size = number, col = `year`, text = name))+
+    geom_point()+
+    scale_colour_gradientn(colours = rainbow(10))+
+    scale_x_continuous(limits = c(0,20000))+
+    ggtitle(label = "plane weight and speed"))
+ggplotly(plot)
   
 
-wide_w %>% 
   
   
   

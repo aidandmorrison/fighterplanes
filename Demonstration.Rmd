@@ -1,0 +1,108 @@
+---
+title: "Ftplanesdemo"
+author: "Aidan Morrison"
+date: "29/05/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(pacman)
+p_load(tidyverse)
+p_load(rvest)
+p_load(skimr)
+p_load(lubridate)
+p_load(plotly)
+p_load(rpart)
+p_load(rpart.plot)
+p_load(RCurl)
+p_load(ggrepel)
+```
+
+## Load some data
+
+This is a pre-prepared scraped dataset of fighterplanes, taken from wikipedia
+
+```{r load}
+ftplanes <- read_csv("intdata/ftplanes.csv")
+skim(ftplanes)
+```
+
+## Select some well-populated vars
+
+
+
+```{r pressure, echo=T}
+my_skim <- skim(ftplanes) %>% 
+  filter(stat == "complete")
+good_vars <- my_skim %>% 
+  filter(value  > 350) %>% 
+  pull(variable)
+
+ftplanes_slim <- ftplanes %>% 
+  select(good_vars)
+```
+
+## Train a model, on number of planes produces
+
+```{r model, echo = T}
+mod <- ftplanes_slim %>%
+  select(-name) %>% 
+  rpart(formula = number ~ . )
+
+```
+
+## Plot the results
+
+```{r plotmodel}
+rpart.plot(mod)
+```
+
+## Find a few top countries
+
+```{r topcountries, echo = T}
+topcountries <- ftplanes_slim %>% 
+  group_by(country) %>% 
+  summarise(count = n()) %>% 
+  arrange(desc(count)) %>% 
+  head(7) %>% 
+  pull(country)
+
+```
+
+## Plot some key variables
+
+```{r, firstplot, echo = T}
+ftplanes_slim %>% 
+  #filter(country %in% topcountries) %>% 
+  ggplot(aes(x = year, y = number, col = status))+
+  geom_point(alpha = 0.5)
+```
+
+## Look at another interesting variable
+
+```{r, secondplot, echo = T}
+
+ftplanes_slim %>% 
+  ggplot(aes(x = Powerplant_kW, y = number, col = year))+
+  geom_point()+
+  scale_colour_gradientn(colours = rainbow(5))
+```
+
+## Make sense of some countries
+
+```{r allcountries}
+ftplanes_slim %>% 
+  filter(country %in% topcountries) %>% 
+  ggplot(aes(x = year, y = number, col = country))+
+  geom_point(alpha = 0.5)
+```
+
+```{r somecountries}
+plot <- ftplanes_slim %>% 
+  filter(country %in% topcountries) %>% 
+  ggplot(aes(x = year, y = number, col = country, text = name))+
+  geom_point(alpha = 0.5)
+
+ggplotly(plot, tooltip = c("x", "y", "col", "text"))
+```
